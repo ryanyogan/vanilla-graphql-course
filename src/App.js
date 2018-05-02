@@ -19,8 +19,13 @@ const GET_ISSUES_OF_REPO = `
       name
       url
       repository(name: $repo) {
+        id
         name
         url
+        stargazers {
+          totalCount
+        }
+        viewerHasStarred
         issues(first: 5, after: $cursor, states: [OPEN]) {
           edges {
             node {
@@ -43,6 +48,16 @@ const GET_ISSUES_OF_REPO = `
             hasNextPage
           }
         }
+      }
+    }
+  }
+`;
+
+const ADD_STAR = `
+  mutation addStar($repoId: ID!) {
+    addStar(input:{ starrableId: $repoId }) {
+      starrable {
+        viewerHasStarred
       }
     }
   }
@@ -86,6 +101,31 @@ const resolveIssuesQuery = (queryResult, cursor) => state => {
   };
 };
 
+const addStarToRepository = repoId =>
+  axiosGithubGrapQL.post('', {
+    query: ADD_STAR,
+    variables: { repoId },
+  });
+
+const resolveAddStarMutation = mutationResult => state => {
+  const { viewerHasStarred } = mutationResult.data.data.addStar.starrable;
+  const { totalCount } = state.organization.repository.stargazers;
+
+  return {
+    ...state,
+    organization: {
+      ...state.organization,
+      repository: {
+        ...state.organization.repository,
+        viewerHasStarred,
+        stargazers: {
+          totalCount: totalCount + 1,
+        },
+      },
+    },
+  };
+};
+
 class App extends Component {
   state = {
     path: 'the-road-to-learn-react/the-road-to-learn-react',
@@ -114,6 +154,11 @@ class App extends Component {
     this.onFetchFromGithub(this.state.path, endCursor);
   };
 
+  onStarRepository = (repoId, viewerHasStarred) =>
+    addStarToRepository(repoId).then(mutationResult =>
+      this.setState(resolveAddStarMutation(mutationResult)),
+    );
+
   render() {
     const { organization, errors } = this.state;
 
@@ -140,6 +185,7 @@ class App extends Component {
           <Organization
             errors={errors}
             onFetchMoreIssues={this.onFetchMoreIssues}
+            onStarRepository={this.onStarRepository}
             organization={organization}
           />
         ) : (
